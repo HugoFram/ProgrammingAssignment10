@@ -9,8 +9,140 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r Packages}
+```{r Packages, message = FALSE}
 require(dplyr)
 require(caret)
 ```
 
+## Executive summary
+
+In this project, the goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. By stacking three models (a random forest, a stochastic gradient boosting and a regularized discriminant analysis) we manage to reach an prediction accuracy of 99%.
+
+## Background
+
+Using devices such as *Jawbone Up*, *Nike FuelBand*, and *Fitbit* it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. More information is available from the website here: [link](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+## Data
+
+The data is loaded as follows:
+
+```{r LoadData}
+data <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+unknown <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+```
+
+The data is split in two datasets: a dataset containing `r nrow(data)` observations labelled with the activity class the observations correspond to, and another dataset with `r nrow(unknown)` observations without the corresponding class. The later will be used by the instructors to evaluate the quality of the project.
+
+We start by splitting our labelled dataset into a training, a testing and a validation sets.
+
+```{r SplitData}
+set.seed(1)
+inBuild <- createDataPartition(data$classe, p = 0.75, list = FALSE)
+buildData <- data[inBuild,]
+validation <- data[-inBuild,]
+
+inTrain <- createDataPartition(buildData$classe, p = 0.75, list = FALSE)
+training <- buildData[inTrain,]
+testing <- buildData[-inTrain,]
+```
+
+## Machine Learning
+
+For our prediction we try three different classifiers: 
+
+* A Random Forest (RF)
+* A Stochastic Gradient Boosting algorithm (GBM)
+* A Regularized Discriminant Analysis (RDA)
+
+Each model is be trained on the training dataset. The classe variable is the outcome and the predictors are:
+
+* Acceleration of each accelerometer in the X, Y, and Z direction (12 variables)
+* Total acceleration of each accelerometer (4 variables)
+* Roll, Pitch and Yaw angles of each accelerometer (12 variables)
+
+```{r TrainModel, cache = TRUE}
+fitData <- training %>% 
+    select(classe, matches("accel|roll|pitch|yaw")) %>%     
+    select(-matches("var|skewness|kurtosis|avg|stddev|amplitude|max|min"))
+
+modFitRF <- train(classe ~ ., 
+                  data = fitData, 
+                  method = "rf")
+modFitGBM <- train(classe ~ ., 
+                   data = fitData, 
+                   method = "gbm", 
+                   verbose = FALSE)
+modFitRDA <- train(classe ~ ., 
+                   data = fitData, 
+                   method = "rda")
+```
+
+The accuracy of each model is then computed on the testing dataset by creating a confusion matrix.
+
+```{r TestModel, results = "hold"}
+predRF <- predict(modFitRF, testing)
+predGBM <- predict(modFitGBM, testing)
+predRDA <- predict(modFitRDA, testing)
+
+print("Random Forest:")
+confusionMatrix(testing$classe, predRF)$table
+print("Stochastic Gradient Boosting:")
+confusionMatrix(testing$classe, predGBM)$table
+print("Regularized Discriminant Analysis:")
+confusionMatrix(testing$classe, predRDA)$table
+```
+
+From this, we can see that the Random Forest seem to predict classes better than the two other algorithms with an accuracy of `r round(confusionMatrix(testing$classe, predRF)$overall[1] * 100, 2)` %.
+
+We try to further improve this accuracy by stacking the three models together with a Random Forest and assess the outcome with another confusion matrix.
+
+```{r StackModel, cache = TRUE}
+predictionData <- data.frame(classe = testing$classe, predRF, predGBM, predRDA)
+modFitComb <- train(classe ~ ., method = "rf", data = predictionData)
+combinedPred <- predict(modFitComb, predictionData)
+confusionMatrix(testing$classe, combinedPred)$table
+```
+
+As we can see, this only improve slightly the accuracy.
+
+Finally, to validate our findings, we test each of the 4 models against the validation dataset.
+
+```{r Validation, results = "hold", tidy = TRUE}
+print("Random Forest:")
+confusionMatrix(validation$classe, predict(modFitRF, validation))$overall
+print("Stochastic Gradient Boosting:")
+confusionMatrix(validation$classe, predict(modFitGBM, validation))$overall
+print("Regularized Discriminant Analysis:")
+confusionMatrix(validation$classe, predict(modFitRDA, validation))$overall
+print("Stacked Models:")
+confusionMatrix(validation$classe, predict(modFitComb, data.frame(predRF = predict(modFitRF, validation), 
+                                                                  predGBM = predict(modFitGBM, validation), 
+                                                                  predRDA = predict(modFitRDA, validation))))$overall
+```
+
+The findings remain the same even though the accuracy is slightly reduced.
+
+## Final Model
+
+We use the final stacked model to predict the classes of the unlabelled dataset but the results are not shown here because it would provide the answers of the Final Quiz.
+
+```{r Prediction, tidy = TRUE}
+predictedClasses <- predict(modFitComb, data.frame(predRF = predict(modFitRF, unknown), 
+                               predGBM = predict(modFitGBM, unknown), 
+                               predRDA = predict(modFitRDA, unknown)))
+```
+
+
+```{r ModelEvaluation, tidy = TRUE}
+accuracy <- confusionMatrix(validation$classe, predict(modFitComb, data.frame(predRF = predict(modFitRF, validation), 
+                                                                  predGBM = predict(modFitGBM, validation), 
+                                                                  predRDA = predict(modFitRDA, validation))))$overall[1] * 100
+```
+
+The final model has an accuracy of `r round(accuracy, 2)` % which means its out of sample error is `r round(100-accuracy, 2)` %. Below is the confusion matrix.
+
+```{r ConfusionMatrix, tidy = TRUE}
+confusionMatrix(validation$classe, predict(modFitComb, data.frame(predRF = predict(modFitRF, validation), 
+                                                                  predGBM = predict(modFitGBM, validation), 
+                                                                  predRDA = predict(modFitRDA, validation))))$table
+```
