@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r Packages, message = FALSE}
 require(dplyr)
 require(caret)
+require(gplots)
 ```
 
 ## Executive summary
@@ -141,8 +142,16 @@ accuracy <- confusionMatrix(validation$classe, predict(modFitComb, data.frame(pr
 
 The final model has an accuracy of `r round(accuracy, 2)` % which means its out of sample error is `r round(100-accuracy, 2)` %. Below is the confusion matrix.
 
-```{r ConfusionMatrix, tidy = TRUE}
-confusionMatrix(validation$classe, predict(modFitComb, data.frame(predRF = predict(modFitRF, validation), 
+```{r ConfusionMatrix, tidy = TRUE, warning = FALSE, results = "hold"}
+confMat <- confusionMatrix(validation$classe, predict(modFitComb, data.frame(predRF = predict(modFitRF, validation), 
                                                                   predGBM = predict(modFitGBM, validation), 
                                                                   predRDA = predict(modFitRDA, validation))))$table
+confMat
+heatMap <- prop.table(confMat, 2)
+heatmap.2(heatMap, Rowv = NA, Colv = NA, scale = "row", 
+          density.info = "none", trace = "none",
+          cellnote = round(heatMap, digits = 2),
+          notecex = 1.0,
+          notecol = "black",
+          xlab = "Predicted class", ylab = "Actual class")
 ```
