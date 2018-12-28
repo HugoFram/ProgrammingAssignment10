@@ -1,0 +1,16 @@
+---
+title: "ProgrammingAssignment10"
+author: "Hugo Frammery"
+date: "28 December 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Packages}
+require(dplyr)
+require(caret)
+```
+
